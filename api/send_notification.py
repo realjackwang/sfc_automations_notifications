@@ -15,11 +15,12 @@ WXPUSHER_UIDS = os.environ.get('WXPUSHER_UIDS') # 格式为 "UID_xxx,UID_yyy"
 KV_REST_API_URL = os.environ.get('KV_REST_API_URL')
 KV_REST_API_TOKEN = os.environ.get('KV_REST_API_TOKEN')
 
+# 使用正确的 REDIS URL 和 TOKEN
+REDIS_URL = os.environ.get('REDIS_URL')
 # 使用 URL 和 Token 创建一个 Redis 客户端实例
-# 注意: Vercel 的环境变量 UPSTASH_REDIS_REST_URL 和 UPSTASH_REDIS_REST_TOKEN 
-# 已经包含了认证信息，所以直接传入即可
+# 注意: Upstash KV 的 REDIS_URL 包含了用户名，PASSWORD 是 KV_REST_API_TOKEN
 r = redis.Redis.from_url(
-    url=KV_REST_API_URL,
+    url=REDIS_URL,
     password=KV_REST_API_TOKEN
 )
 
