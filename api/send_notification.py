@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import time
+import redis
 from http.server import BaseHTTPRequestHandler
 
 # WxPusher 配置
@@ -14,36 +15,30 @@ WXPUSHER_UIDS = os.environ.get('WXPUSHER_UIDS') # 格式为 "UID_xxx,UID_yyy"
 KV_REST_API_URL = os.environ.get('KV_REST_API_URL')
 KV_REST_API_TOKEN = os.environ.get('KV_REST_API_TOKEN')
 
+# 使用 URL 和 Token 创建一个 Redis 客户端实例
+# 注意: Vercel 的环境变量 UPSTASH_REDIS_REST_URL 和 UPSTASH_REDIS_REST_TOKEN 
+# 已经包含了认证信息，所以直接传入即可
+r = redis.Redis.from_url(
+    url=KV_REST_API_URL,
+    password=KV_REST_API_TOKEN
+)
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             # 1. 从 Upstash KV 读取所有任务数据
-            headers = {
-                'Authorization': f'Bearer {KV_REST_API_TOKEN}'
-            }
-            # 使用 Upstash 的 KEYS 命令获取所有键
-            keys_url = f"{KV_REST_API_URL}/keys/task:*"
-            keys_response = requests.get(keys_url, headers=headers)
-            keys_response.raise_for_status()
-            
-            keys_data = keys_response.json()
-            task_keys = keys_data.get('result', [])
-            
+            # 使用 Redis 的 keys 命令获取所有键，比 REST API 更可靠
+            task_keys = r.keys("task:*")
+
             # 2. 批量读取所有任务数据并分类
             success_tasks = []
             failure_tasks = []
             
             if task_keys:
-                get_url = f"{KV_REST_API_URL}/mget"
-                get_payload = {"keys": task_keys}
-                get_response = requests.post(get_url, headers=headers, json=get_payload)
-                get_response.raise_for_status()
-                
-                get_data = get_response.json()
-                results = get_data.get('result', [])
+                get_results = r.mget(task_keys)
                 
                 # 过滤并解析有效数据
-                for res in results:
+                for res in get_results:
                     if res:
                         task = json.loads(res)
                         if task.get('status') == 'success':
@@ -98,6 +93,10 @@ class handler(BaseHTTPRequestHandler):
             wxpusher_response = requests.post(WXPUSHER_API_URL, json=wxpusher_payload)
             wxpusher_response.raise_for_status()
 
+            # 5. 成功发送后，删除所有已处理的键
+            if task_keys:
+                r.delete(*task_keys) # 使用 Redis 客户端的 delete 命令
+            
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
