@@ -1,22 +1,14 @@
 import os
 import json
-import redis
+import requests
 
-# 从环境变量中获取 Upstash Redis 的连接信息
-REDIS_URL = os.environ.get('UPSTASH_REDIS_REST_URL')
-REDIS_TOKEN = os.environ.get('UPSTASH_REDIS_REST_TOKEN')
-
-# 使用 URL 和 Token 创建一个 Redis 客户端实例
-# 注意: Vercel 的环境变量 UPSTASH_REDIS_REST_URL 和 UPSTASH_REDIS_REST_TOKEN 
-# 已经包含了认证信息，所以直接传入即可
-r = redis.Redis.from_url(
-    url=REDIS_URL,
-    password=REDIS_TOKEN
-)
+# 从环境变量中获取 KV REST API 的连接信息
+KV_REST_API_URL = os.environ.get('KV_REST_API_URL')
+KV_REST_API_TOKEN = os.environ.get('KV_REST_API_TOKEN')
 
 def handler(request):
     """
-    处理 POST 请求，将任务执行信息存入 Redis。
+    处理 POST 请求，将任务执行信息存入 Vercel KV 数据库。
     """
     if request.method != 'POST':
         return {
@@ -35,11 +27,31 @@ def handler(request):
                 "body": "Missing required parameters"
             }
         
-        # 使用时间戳作为键，存储任务信息
-        key = f"task:{data['timestamp'] or os.time()}"
+        # 构造要存入的数据
+        timestamp = data.get('timestamp', str(os.time()))
+        # 使用 REST API 的 SET 命令来存储数据
+        # 键使用 `task:` 作为前缀，方便管理
+        key = f"task:{timestamp}"
         
-        # 存储到 Redis，如果 timestamp 已存在则覆盖
-        r.set(key, json.dumps(data))
+        # 构造 REST API 请求
+        headers = {
+            'Authorization': f'Bearer {KV_REST_API_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+        
+        payload = {
+            "command": ["SET", key, json.dumps(data)]
+        }
+        
+        # 发送请求到 Upstash KV
+        response = requests.post(KV_REST_API_URL, headers=headers, data=json.dumps(payload))
+        
+        # 检查响应状态码
+        if response.status_code != 200:
+            return {
+                "statusCode": response.status_code,
+                "body": f"Failed to store data: {response.text}"
+            }
 
         return {
             "statusCode": 200,
