@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-import time # 新增：导入 time 模块
+import time
 from http.server import BaseHTTPRequestHandler
 
 # 从环境变量中获取 KV REST API 的连接信息
@@ -25,23 +25,24 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             # 构造要存入的数据
-            timestamp = data.get('timestamp', str(time.time())) # 修正：使用 time.time()
+            timestamp = data.get('timestamp', int(time.time()))
             key = f"task:{timestamp}"
             
-            payload = {
-                "command": ["SET", key, json.dumps(data)]
-            }
-            
+            # 使用 Upstash 的 REST API 来存储数据
             headers = {
                 'Authorization': f'Bearer {KV_REST_API_TOKEN}',
                 'Content-Type': 'application/json'
             }
-            response = requests.post(KV_REST_API_URL, headers=headers, json=payload)
+            
+            # 修正: 将数据直接作为 JSON 对象发送，而不是封装在 'command' 数组中
+            # 这与 Upstash 的 REST SET API 文档一致
+            set_url = f"{KV_REST_API_URL}/set/{key}"
+            response = requests.post(set_url, headers=headers, json=data)
             
             if response.status_code != 200:
                 self.send_response(response.status_code)
                 self.end_headers()
-                self.wfile.write(json.dumps({"error": "Failed to store data"}).encode('utf-8'))
+                self.wfile.write(json.dumps({"error": f"Failed to store data"}).encode('utf-8'))
                 return
 
             self.send_response(200)
