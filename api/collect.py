@@ -1,21 +1,22 @@
 import os
 import json
 import requests
+import time # 新增：导入 time 模块
 from http.server import BaseHTTPRequestHandler
 
-# Your environment variables from Vercel
+# 从环境变量中获取 KV REST API 的连接信息
 KV_REST_API_URL = os.environ.get('KV_REST_API_URL')
 KV_REST_API_TOKEN = os.environ.get('KV_REST_API_TOKEN')
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
-            # Read the request body and parse JSON
+            # 读取请求体并解析 JSON
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode('utf-8'))
 
-            # Validate required parameters
+            # 验证必需的参数
             required_params = ['source', 'task_name', 'status', 'message']
             if not all(p in data for p in required_params):
                 self.send_response(400)
@@ -23,15 +24,14 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": "Missing required parameters"}).encode('utf-8'))
                 return
 
-            # Construct payload for Upstash KV
-            timestamp = data.get('timestamp', os.time())
+            # 构造要存入的数据
+            timestamp = data.get('timestamp', str(time.time())) # 修正：使用 time.time()
             key = f"task:{timestamp}"
             
             payload = {
                 "command": ["SET", key, json.dumps(data)]
             }
             
-            # Send data to Upstash KV REST API
             headers = {
                 'Authorization': f'Bearer {KV_REST_API_TOKEN}',
                 'Content-Type': 'application/json'
